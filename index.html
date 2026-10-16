@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Serverless P2P Caller</title>
-    <!-- Include PeerJS Library directly from CDN -->
+    <title>Serverless Voice Caller</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         * { box-sizing: border-box; }
@@ -53,46 +52,13 @@
         button:hover { background-color: #1d4ed8; }
         .btn-danger { background-color: #dc2626; }
         .btn-danger:hover { background-color: #b91c1c; }
-        .video-container { 
-            display: flex; 
-            flex-direction: column; 
-            gap: 16px; 
-            margin-top: 20px; 
-            width: 100%; 
-            max-width: 700px; 
-        }
-        @media (min-width: 600px) {
-            .video-container { flex-direction: row; }
-        }
-        .video-box {
-            flex: 1;
-            background: #000;
-            border-radius: 12px;
-            overflow: hidden;
-            position: relative;
-        }
-        video { 
-            width: 100%; 
-            height: 240px; 
-            object-fit: cover; 
-            background: #000; 
-        }
-        #local-video { transform: scaleX(-1); } /* Mirror effect for self view */
-        .video-label {
-            position: absolute;
-            bottom: 8px;
-            left: 8px;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-        }
-        #call-ui { display: none; width: 100%; max-width: 700px; }
+        #call-ui { display: none; width: 100%; max-width: 400px; }
+        .status-box { margin-top: 15px; font-size: 14px; color: #94a3b8; }
     </style>
 </head>
 <body>
 
-    <h1>P2P Voice & Video</h1>
+    <h1>P2P Voice Calling</h1>
 
     <!-- Step 1: Set Username -->
     <div id="login-ui" class="card">
@@ -102,27 +68,16 @@
     </div>
 
     <!-- Step 2: Call Screen -->
-    <div id="call-ui">
-        <div class="card" style="max-width: 100%; margin-top: 0;">
-            <p>Your Username: <strong id="my-id-display" style="color: #38bdf8;"></strong></p>
-            
-            <div style="display: flex; gap: 8px;">
-                <input type="text" id="remote-id-input" placeholder="Friend's Username">
-                <button onclick="makeCall()" style="width: auto;">Call</button>
-                <button onclick="endCall()" class="btn-danger" style="width: auto;">Hang Up</button>
-            </div>
-        </div>
-
-        <div class="video-container">
-            <div class="video-box">
-                <video id="local-video" autoplay muted playsinline></video>
-                <div class="video-label">You</div>
-            </div>
-            <div class="video-box">
-                <video id="remote-video" autoplay playsinline></video>
-                <div class="video-label">Friend</div>
-            </div>
-        </div>
+    <div id="call-ui" class="card">
+        <p>Your Username: <strong id="my-id-display" style="color: #38bdf8;"></strong></p>
+        
+        <input type="text" id="remote-id-input" placeholder="Friend's Username">
+        <button onclick="makeCall()">Call Friend</button>
+        <button onclick="endCall()" class="btn-danger">Hang Up</button>
+        
+        <div class="status-box" id="call-status">Status: Ready</div>
+        <!-- Hidden audio element to play remote sound -->
+        <audio id="remote-audio" autoplay></audio>
     </div>
 
     <script>
@@ -130,21 +85,18 @@
         let localStream = null;
         let currentCall = null;
 
-        // Initialize Peer connection using free public PeerJS server
         async function initPeer() {
             const username = document.getElementById('username-input').value.trim().toLowerCase();
             if (!username) return alert('Please enter a username');
 
-            // Request camera & microphone permissions
+            // Request AUDIO ONLY (no camera needed)
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                document.getElementById('local-video').srcObject = localStream;
+                localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
             } catch (err) {
-                alert('Camera & Microphone access is required: ' + err.message);
+                alert('Microphone access is required: ' + err.message);
                 return;
             }
 
-            // Connect to PeerJS server using chosen username as Peer ID
             peer = new Peer(username);
 
             peer.on('open', (id) => {
@@ -153,7 +105,6 @@
                 document.getElementById('my-id-display').innerText = id;
             });
 
-            // Handle errors (e.g., username already taken)
             peer.on('error', (err) => {
                 if (err.type === 'unavailable-id') {
                     alert('That username is already taken. Please pick another one.');
@@ -164,44 +115,48 @@
 
             // Handle Incoming Calls
             peer.on('call', (call) => {
-                const acceptCall = confirm(`Incoming call from: ${call.peer}. Answer?`);
+                const acceptCall = confirm(`Incoming voice call from: ${call.peer}. Answer?`);
                 if (acceptCall) {
-                    call.answer(localStream); // Send local stream back to caller
+                    call.answer(localStream);
                     currentCall = call;
+                    document.getElementById('call-status').innerText = `Connected with ${call.peer}`;
 
                     call.on('stream', (remoteStream) => {
-                        document.getElementById('remote-video').srcObject = remoteStream;
+                        document.getElementById('remote-audio').srcObject = remoteStream;
                     });
 
                     call.on('close', () => {
-                        document.getElementById('remote-video').srcObject = null;
+                        document.getElementById('call-status').innerText = 'Call ended';
+                        document.getElementById('remote-audio').srcObject = null;
                     });
                 }
             });
         }
 
-        // Call another user by username
         function makeCall() {
             const remoteId = document.getElementById('remote-id-input').value.trim().toLowerCase();
             if (!remoteId) return alert("Enter your friend's username");
 
+            document.getElementById('call-status').innerText = `Calling ${remoteId}...`;
             const call = peer.call(remoteId, localStream);
             currentCall = call;
 
             call.on('stream', (remoteStream) => {
-                document.getElementById('remote-video').srcObject = remoteStream;
+                document.getElementById('call-status').innerText = `Connected with ${remoteId}`;
+                document.getElementById('remote-audio').srcObject = remoteStream;
             });
 
             call.on('close', () => {
-                document.getElementById('remote-video').srcObject = null;
+                document.getElementById('call-status').innerText = 'Call ended';
+                document.getElementById('remote-audio').srcObject = null;
             });
         }
 
-        // Hang up call
         function endCall() {
             if (currentCall) {
                 currentCall.close();
-                document.getElementById('remote-video').srcObject = null;
+                document.getElementById('call-status').innerText = 'Call ended';
+                document.getElementById('remote-audio').srcObject = null;
             }
         }
     </script>
