@@ -56,7 +56,7 @@
         .status-box { margin-top: 15px; font-size: 14px; color: #94a3b8; }
     </style>
 </head>
-<body>
+<body onclick="unlockAudio()"> <!-- Tapping anywhere helps unlock mobile audio -->
 
     <h1>P2P Voice Calling</h1>
 
@@ -77,7 +77,7 @@
         
         <div class="status-box" id="call-status">Status: Ready</div>
         <!-- Hidden audio element to play remote sound -->
-        <audio id="remote-audio" autoplay></audio>
+        <audio id="remote-audio" autoplay playsinline></audio>
     </div>
 
     <script>
@@ -85,11 +85,28 @@
         let localStream = null;
         let currentCall = null;
 
+        // Reliable STUN servers to help navigate network paths
+        const peerOptions = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:global.stun.twilio.com:3478' }
+                ]
+            }
+        };
+
+        // Helper to unlock mobile audio context on user tap
+        function unlockAudio() {
+            const audioEl = document.getElementById('remote-audio');
+            if (audioEl && audioEl.paused) {
+                audioEl.play().catch(() => {});
+            }
+        }
+
         async function initPeer() {
             const username = document.getElementById('username-input').value.trim().toLowerCase();
             if (!username) return alert('Please enter a username');
 
-            // Request AUDIO ONLY (no camera needed)
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
             } catch (err) {
@@ -97,7 +114,7 @@
                 return;
             }
 
-            peer = new Peer(username);
+            peer = new Peer(username, peerOptions);
 
             peer.on('open', (id) => {
                 document.getElementById('login-ui').style.display = 'none';
@@ -118,17 +135,7 @@
                 const acceptCall = confirm(`Incoming voice call from: ${call.peer}. Answer?`);
                 if (acceptCall) {
                     call.answer(localStream);
-                    currentCall = call;
-                    document.getElementById('call-status').innerText = `Connected with ${call.peer}`;
-
-                    call.on('stream', (remoteStream) => {
-                        document.getElementById('remote-audio').srcObject = remoteStream;
-                    });
-
-                    call.on('close', () => {
-                        document.getElementById('call-status').innerText = 'Call ended';
-                        document.getElementById('remote-audio').srcObject = null;
-                    });
+                    setupCallEvents(call);
                 }
             });
         }
@@ -139,11 +146,31 @@
 
             document.getElementById('call-status').innerText = `Calling ${remoteId}...`;
             const call = peer.call(remoteId, localStream);
+            setupCallEvents(call);
+        }
+
+        function setupCallEvents(call) {
             currentCall = call;
 
+            // Monitor connection states to debug network or audio path issues
+            if (call.peerConnection) {
+                call.peerConnection.oniceconnectionstatechange = () => {
+                    const state = call.peerConnection.iceConnectionState;
+                    document.getElementById('call-status').innerText = `ICE State: ${state}`;
+                    console.log('ICE Connection State:', state);
+                };
+            }
+
             call.on('stream', (remoteStream) => {
-                document.getElementById('call-status').innerText = `Connected with ${remoteId}`;
-                document.getElementById('remote-audio').srcObject = remoteStream;
+                document.getElementById('call-status').innerText = `Connected! Receiving audio...`;
+                const audioEl = document.getElementById('remote-audio');
+                audioEl.srcObject = remoteStream;
+                
+                // Force play to bypass mobile browser restrictions
+                audioEl.play().catch(e => {
+                    console.log("Autoplay blocked, tap the screen:", e);
+                    document.getElementById('call-status').innerText = `Connected! Tap screen to hear audio.`;
+                });
             });
 
             call.on('close', () => {
