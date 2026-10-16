@@ -56,7 +56,7 @@
         .status-box { margin-top: 15px; font-size: 14px; color: #94a3b8; }
     </style>
 </head>
-<body onclick="unlockAudio()"> <!-- Tapping anywhere helps unlock mobile audio -->
+<body onclick="unlockAudio()">
 
     <h1>P2P Voice Calling</h1>
 
@@ -76,7 +76,6 @@
         <button onclick="endCall()" class="btn-danger">Hang Up</button>
         
         <div class="status-box" id="call-status">Status: Ready</div>
-        <!-- Hidden audio element to play remote sound -->
         <audio id="remote-audio" autoplay playsinline></audio>
     </div>
 
@@ -84,8 +83,8 @@
         let peer = null;
         let localStream = null;
         let currentCall = null;
+        let myUsername = "";
 
-        // Reliable STUN servers to help navigate network paths
         const peerOptions = {
             config: {
                 iceServers: [
@@ -95,7 +94,6 @@
             }
         };
 
-        // Helper to unlock mobile audio context on user tap
         function unlockAudio() {
             const audioEl = document.getElementById('remote-audio');
             if (audioEl && audioEl.paused) {
@@ -104,8 +102,8 @@
         }
 
         async function initPeer() {
-            const username = document.getElementById('username-input').value.trim().toLowerCase();
-            if (!username) return alert('Please enter a username');
+            myUsername = document.getElementById('username-input').value.trim().toLowerCase();
+            if (!myUsername) return alert('Please enter a username');
 
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
@@ -114,23 +112,40 @@
                 return;
             }
 
-            peer = new Peer(username, peerOptions);
+            createPeerConnection();
+        }
+
+        function createPeerConnection() {
+            peer = new Peer(myUsername, peerOptions);
 
             peer.on('open', (id) => {
                 document.getElementById('login-ui').style.display = 'none';
                 document.getElementById('call-ui').style.display = 'block';
                 document.getElementById('my-id-display').innerText = id;
+                document.getElementById('call-status').innerText = 'Status: Connected to network';
+            });
+
+            // Automatically handle network drops and attempt to reconnect
+            peer.on('disconnected', () => {
+                document.getElementById('call-status').innerText = 'Status: Network dropped, reconnecting...';
+                console.log('Peer disconnected from server. Attempting reconnection...');
+                setTimeout(() => {
+                    if (peer && !peer.destroyed) {
+                        peer.reconnect();
+                    }
+                }, 2000);
             });
 
             peer.on('error', (err) => {
                 if (err.type === 'unavailable-id') {
                     alert('That username is already taken. Please pick another one.');
+                    document.getElementById('login-ui').style.display = 'block';
+                    document.getElementById('call-ui').style.display = 'none';
                 } else {
-                    alert('Connection Error: ' + err.type);
+                    console.warn('Peer error encountered:', err.type);
                 }
             });
 
-            // Handle Incoming Calls
             peer.on('call', (call) => {
                 const acceptCall = confirm(`Incoming voice call from: ${call.peer}. Answer?`);
                 if (acceptCall) {
@@ -152,23 +167,22 @@
         function setupCallEvents(call) {
             currentCall = call;
 
-            // Monitor connection states to debug network or audio path issues
             if (call.peerConnection) {
                 call.peerConnection.oniceconnectionstatechange = () => {
                     const state = call.peerConnection.iceConnectionState;
-                    document.getElementById('call-status').innerText = `ICE State: ${state}`;
                     console.log('ICE Connection State:', state);
+                    if (state === 'disconnected' || state === 'failed') {
+                        document.getElementById('call-status').innerText = 'Status: Connection unstable...';
+                    }
                 };
             }
 
             call.on('stream', (remoteStream) => {
-                document.getElementById('call-status').innerText = `Connected! Receiving audio...`;
+                document.getElementById('call-status').innerText = `Connected!`;
                 const audioEl = document.getElementById('remote-audio');
                 audioEl.srcObject = remoteStream;
-                
-                // Force play to bypass mobile browser restrictions
                 audioEl.play().catch(e => {
-                    console.log("Autoplay blocked, tap the screen:", e);
+                    console.log("Autoplay blocked:", e);
                     document.getElementById('call-status').innerText = `Connected! Tap screen to hear audio.`;
                 });
             });
