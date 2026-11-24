@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111318">
+<title>Voice Link — P2P Calls</title>
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<style>
+:root{color-scheme:dark;--bg:#101217;--panel:#191d25;--panel2:#202631;--line:#303846;--text:#eef2f8;--muted:#9ba7b8;--accent:#7c9cff;--red:#f06b75;--green:#62d6a3}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#1a2231 0,#101217 55%);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+main{width:min(1100px,100%);margin:auto;padding:28px 18px 50px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:24px}
+.brand{display:flex;align-items:center;gap:12px}.logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#8ba8ff,#586ee8);display:grid;place-items:center;font-size:21px;font-weight:800;color:#fff}.brand h1{font-size:21px;margin:0}.brand p{margin:1px 0 0;color:var(--muted);font-size:13px}
+.status{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:#657080}.dot.on{background:var(--green);box-shadow:0 0 12px #62d6a366}.layout{display:grid;grid-template-columns:340px 1fr;gap:18px}
+.panel{background:#191d25eF;border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 16px 50px #0003}.panel h2{font-size:16px;margin:0 0 14px}.field{display:flex;flex-direction:column;gap:6px;margin:12px 0}.field label{font-size:12px;color:var(--muted);font-weight:650}.field input{width:100%;background:#11151c;border:1px solid var(--line);border-radius:10px;padding:11px 12px;color:var(--text);outline:none}.field input:focus{border-color:var(--accent)}.row{display:flex;gap:8px}.row>*{min-width:0;flex:1}
+button{border:0;border-radius:11px;padding:11px 14px;font-weight:700;color:#fff;background:#39465d;cursor:pointer;transition:.15s}button:hover{filter:brightness(1.14)}button:disabled{opacity:.42;cursor:not-allowed}.primary{background:linear-gradient(135deg,#718fff,#596fe0)}.danger{background:#873c49}.success{background:#246c55}.subtle{background:#2a303b;border:1px solid #3a4351}.wide{width:100%}.small{padding:8px 10px;font-size:12px}
+.note{color:var(--muted);font-size:12px;margin:12px 0 0}.divider{height:1px;background:var(--line);margin:18px 0}.hidden{display:none!important}
+.call-panel{min-height:520px;display:flex;flex-direction:column}.call-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.call-head h2{margin:0}.call-state{color:var(--muted);font-size:13px}.videos{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:center;margin:20px 0}.video-wrap{position:relative;background:#0b0e13;border:1px solid var(--line);border-radius:14px;overflow:hidden;min-height:210px;display:grid;place-items:center}.video-wrap video{width:100%;height:100%;max-height:380px;object-fit:contain;background:#080a0e}.video-label{position:absolute;left:10px;bottom:9px;background:#080a0ecc;padding:4px 8px;border-radius:7px;font-size:11px;color:#dce3ef}.placeholder{color:#778398;font-size:13px;text-align:center;padding:20px}.controls{display:flex;justify-content:center;gap:9px;flex-wrap:wrap}.controls button{min-width:105px}.incoming{background:#202b29;border:1px solid #31584d;padding:13px;border-radius:12px;margin-top:15px}.incoming p{margin:0 0 10px}.incoming-actions{display:flex;gap:8px}.incoming-actions button{flex:1}
+details{margin-top:16px}summary{color:#c5cedc;font-size:13px;cursor:pointer}details .field{margin:10px 0}.footer{color:#788496;font-size:11px;text-align:center;margin-top:22px}
+@media(max-width:780px){main{padding:18px 12px 35px}.layout{grid-template-columns:1fr}.call-panel{min-height:480px}.videos{grid-template-columns:1fr 1fr}.video-wrap{min-height:150px}.top{align-items:flex-start}.status{font-size:11px}}
+@media(max-width:460px){.videos{grid-template-columns:1fr}.video-wrap{min-height:180px}.controls button{flex:1;min-width:90px}.panel{padding:16px}}
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div class="brand"><div class="logo">V</div><div><h1>Voice Link</h1><p>Direct peer-to-peer calling</p></div></div>
+    <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Not connected</span></div>
+  </header>
+  <div class="layout">
+    <aside class="panel">
+      <h2>Your connection</h2>
+      <div class="field"><label for="username">YOUR USERNAME / PEER ID</label><input id="username" maxlength="48" placeholder="e.g. Alex_01" autocomplete="username"></div>
+      <button class="primary wide" id="connectBtn">Connect</button>
+      <p class="note" id="myIdNote">Choose a unique username. The other person enters this exact ID to call you.</p>
+      <div class="divider"></div>
+      <h2>Start a call</h2>
+      <div class="field"><label for="remoteId">CALL USERNAME / PEER ID</label><input id="remoteId" maxlength="48" placeholder="Enter their username"></div>
+      <div class="row"><button class="primary" id="voiceBtn" disabled>Voice call</button><button class="primary" id="videoBtn" disabled>Video call</button></div>
+      <div id="incoming" class="incoming hidden">
+        <p id="incomingText">Incoming call</p>
+        <div class="incoming-actions"><button class="success" id="acceptBtn">Accept</button><button class="danger" id="declineBtn">Decline</button></div>
+      </div>
+      <details>
+        <summary>Network settings (STUN / TURN)</summary>
+        <p class="note">STUN is included. If calls fail across restrictive networks, add TURN details from a TURN provider. TURN relays media only when a direct route cannot be made.</p>
+        <div class="field"><label for="turnUrl">TURN URL (optional)</label><input id="turnUrl" placeholder="turn:turn.example.com:3478"></div>
+        <div class="field"><label for="turnUser">TURN USERNAME</label><input id="turnUser" placeholder="TURN username"></div>
+        <div class="field"><label for="turnPass">TURN CREDENTIAL</label><input id="turnPass" type="password" placeholder="TURN password"></div>
+        <button class="subtle small wide" id="saveTurn">Save network settings</button>
+      </details>
+      <p class="note">No user accounts are created. Your username is your PeerJS ID and must be unique while connected.</p>
+    </aside>
+    <section class="panel call-panel">
+      <div class="call-head"><div><h2 id="peerTitle">No active call</h2><div class="call-state" id="callState">Connect, then call another user.</div></div><span class="badge" id="callType"></span></div>
+      <div class="videos">
+        <div class="video-wrap"><video id="remoteVideo" autoplay playsinline></video><div class="placeholder" id="remotePlaceholder">Remote video appears here</div><span class="video-label">Remote</span></div>
+        <div class="video-wrap"><video id="localVideo" autoplay muted playsinline></video><div class="placeholder" id="localPlaceholder">Your camera preview appears here</div><span class="video-label">You</span></div>
+      </div>
+      <div class="controls">
+        <button class="subtle" id="micBtn" disabled>Mute mic</button>
+        <button class="subtle" id="cameraBtn" disabled>Camera off</button>
+        <button class="subtle" id="screenBtn" disabled>Share screen</button>
+        <button class="danger" id="hangupBtn" disabled>End call</button>
+      </div>
+      <p class="note" id="mediaNote">Your browser will ask for microphone/camera permission when you start or accept a call. Camera and microphone access require HTTPS or localhost.</p>
+    </section>
+  </div>
+  <div class="footer">Voice Link • WebRTC media • PeerJS signaling • Calls are not recorded by this app</div>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const els = {
+    username:$('username'), remoteId:$('remoteId'), connect:$('connectBtn'),
+    voice:$('voiceBtn'), video:$('videoBtn'), statusDot:$('statusDot'), status:$('statusText'),
+    peerTitle:$('peerTitle'), callState:$('callState'), callType:$('callType'),
+    local:$('localVideo'), remote:$('remoteVideo'), localPh:$('localPlaceholder'), remotePh:$('remotePlaceholder'),
+    mic:$('micBtn'), camera:$('cameraBtn'), screen:$('screenBtn'), hangup:$('hangupBtn'),
+    incoming:$('incoming'), incomingText:$('incomingText'), accept:$('acceptBtn'), decline:$('declineBtn'),
+    turnUrl:$('turnUrl'), turnUser:$('turnUser'), turnPass:$('turnPass'), saveTurn:$('saveTurn')
+  };
+  let peer=null, activeCall=null, pendingCall=null, localStream=null, screenStream=null;
+  let isVideoCall=false, connected=false, remoteName='', cameraTrack=null;
+  const setStatus=(text,on=false)=>{els.status.textContent=text;els.statusDot.classList.toggle('on',on)};
+  const setPlaceholders=()=>{els.localPh.classList.toggle('hidden',!!els.local.srcObject);els.remotePh.classList.toggle('hidden',!!els.remote.srcObject)};
+  const mediaButtons=on=>{els.mic.disabled=!on;els.camera.disabled=!on||!isVideoCall;els.screen.disabled=!on||!isVideoCall;els.hangup.disabled=!on};
+  const getIceConfig=()=>{
+    const iceServers=[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}];
+    const url=els.turnUrl.value.trim();
+    if(url){const server={urls:url};if(els.turnUser.value.trim())server.username=els.turnUser.value.trim();if(els.turnPass.value)server.credential=els.turnPass.value;iceServers.push(server);}
+    return {iceServers};
+  };
+  const setCallUI=(name,type)=>{
+    els.peerTitle.textContent=name?`Call with ${name}`:'No active call';
+    els.callType.textContent=type?(type==='video'?'VIDEO':'VOICE'):'';
+    els.callState.textContent=type==='video'?'Video call connected':type==='voice'?'Voice call connected':'Connect, then call another user.';
+  };
+  async function acquireMedia(video){
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('Camera/microphone access is unavailable. Open this page over HTTPS or localhost.');
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:video?{width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}:false});
+    localStream=stream;cameraTrack=stream.getVideoTracks()[0]||null;els.local.srcObject=stream;setPlaceholders();return stream;
+  }
+  function clearCall(){
+    if(screenStream){screenStream.getTracks().forEach(t=>t.stop());screenStream=null;}
+    if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
+    cameraTrack=null;els.local.srcObject=null;els.remote.srcObject=null;setPlaceholders();
+    activeCall=null;pendingCall=null;isVideoCall=false;remoteName='';
+    els.incoming.classList.add('hidden');mediaButtons(false);
+    els.mic.textContent='Mute mic';els.camera.textContent='Camera off';els.screen.textContent='Share screen';
+    setCallUI('',null);
+  }
+  function bindCall(call, name, video){
+    activeCall=call;remoteName=name;isVideoCall=video;
+    setCallUI(name,video?'video':'voice');mediaButtons(true);
+    call.on('stream',stream=>{els.remote.srcObject=stream;setPlaceholders();els.callState.textContent='Connected • direct media when network allows';});
+    call.on('close',()=>{clearCall();els.callState.textContent='Call ended';});
+    call.on('error',err=>{console.error(err);els.callState.textContent='Call error: '+(err.message||'connection failed');clearCall();});
+  }
+  async function placeCall(video){
+    if(!peer||!connected)return;
+    const id=els.remoteId.value.trim();
+    if(!id){alert('Enter the other person’s username.');return;}
+    if(id===els.username.value.trim()){alert('You cannot call your own username.');return;}
+    try{
+      els.callState.textContent='Requesting media permission…';
+      const stream=await acquireMedia(video);
+      const call=peer.call(id,stream,{metadata:{video,from:els.username.value.trim()}});
+      if(!call)throw new Error('Could not create the call. Check the peer ID and connection.');
+      bindCall(call,id,video);
+      els.callState.textContent='Calling '+id+'…';
+    }catch(e){clearCall();alert(e.message||String(e));}
+  }
+  async function acceptCall(){
+    if(!pendingCall)return;
+    const call=pendingCall;pendingCall=null;els.incoming.classList.add('hidden');
+    try{
+      const video=!!call.metadata?.video;
+      const stream=await acquireMedia(video);
+      call.answer(stream);bindCall(call,call.metadata?.from||'Caller',video);
+      els.callState.textContent='Connecting…';
+    }catch(e){call.close();clearCall();alert(e.message||String(e));}
+  }
+  function declineCall(){if(pendingCall){pendingCall.close();pendingCall=null;}els.incoming.classList.add('hidden');}
+  els.connect.addEventListener('click',()=>{
+    const id=els.username.value.trim();
+    if(!id){alert('Enter a username first.');return;}
+    if(!/^[A-Za-z0-9_-]{3,48}$/.test(id)){alert('Use 3–48 characters: letters, numbers, underscores, or hyphens.');return;}
+    if(peer){peer.destroy();peer=null;}
+    setStatus('Connecting…');
+    peer=new Peer(id,{debug:1,config:getIceConfig()});
+    peer.on('open',actualId=>{
+      connected=true;els.username.value=actualId;els.connect.textContent='Reconnect';
+      els.voice.disabled=false;els.video.disabled=false;setStatus('Online as '+actualId,true);
+    });
+    peer.on('call',call=>{
+      if(activeCall||pendingCall){call.close();return;}
+      pendingCall=call;const from=call.metadata?.from||call.peer;
+      els.incomingText.textContent=`Incoming ${call.metadata?.video?'video':'voice'} call from ${from}`;
+      els.incoming.classList.remove('hidden');
+    });
+    peer.on('disconnected',()=>{connected=false;els.voice.disabled=true;els.video.disabled=true;setStatus('Signaling disconnected');});
+    peer.on('close',()=>{connected=false;setStatus('Offline');});
+    peer.on('error',err=>{
+      console.error(err);setStatus('Connection error');
+      if(err.type==='unavailable-id')alert('That username is already in use. Choose another username.');
+      else if(err.type==='peer-unavailable')alert('That user is not currently reachable. Check their username and connection.');
+      else alert('Peer connection error: '+(err.message||err.type));
+    });
+  });
+  els.voice.addEventListener('click',()=>placeCall(false));
+  els.video.addEventListener('click',()=>placeCall(true));
+  els.accept.addEventListener('click',acceptCall);els.decline.addEventListener('click',declineCall);
+  els.hangup.addEventListener('click',()=>{if(activeCall)activeCall.close();clearCall();});
+  els.mic.addEventListener('click',()=>{
+    const track=localStream?.getAudioTracks()[0];if(!track)return;track.enabled=!track.enabled;els.mic.textContent=track.enabled?'Mute mic':'Unmute mic';
+  });
+  els.camera.addEventListener('click',()=>{
+    const track=screenStream?.getVideoTracks()[0]||cameraTrack;if(!track)return;track.enabled=!track.enabled;els.camera.textContent=track.enabled?'Camera off':'Camera on';
+  });
+  els.screen.addEventListener('click',async()=>{
+    if(!activeCall||!isVideoCall)return;
+    try{
+      if(screenStream){
+        const screenTrack=screenStream.getVideoTracks()[0];
+        const sender=activeCall.peerConnection?.getSenders().find(s=>s.track?.kind==='video');
+        if(sender&&cameraTrack)await sender.replaceTrack(cameraTrack);
+        screenTrack?.stop();screenStream=null;els.local.srcObject=localStream;els.screen.textContent='Share screen';return;
+      }
+      screenStream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
+      const track=screenStream.getVideoTracks()[0];
+      const sender=activeCall.peerConnection?.getSenders().find(s=>s.track?.kind==='video');
+      if(!sender)throw new Error('Video sender is not ready yet.');
+      await sender.replaceTrack(track);els.local.srcObject=screenStream;els.screen.textContent='Stop sharing';
+      track.addEventListener('ended',async()=>{
+        if(activeCall&&cameraTrack){const s=activeCall.peerConnection?.getSenders().find(x=>x.track?.kind==='video');if(s)await s.replaceTrack(cameraTrack).catch(()=>{});}
+        screenStream=null;if(localStream)els.local.srcObject=localStream;els.screen.textContent='Share screen';
+      });
+    }catch(e){console.error(e);els.callState.textContent='Screen sharing unavailable: '+(e.message||e);}
+  });
+  els.saveTurn.addEventListener('click',()=>{
+    try{localStorage.setItem('voice-link-turn',JSON.stringify({url:els.turnUrl.value,user:els.turnUser.value,pass:els.turnPass.value}));alert('TURN settings saved in this browser. Reconnect to apply them.');}
+    catch(e){alert('Could not save settings in this browser.');}
+  });
+  try{
+    const saved=JSON.parse(localStorage.getItem('voice-link-turn')||'{}');
+    els.turnUrl.value=saved.url||'';els.turnUser.value=saved.user||'';els.turnPass.value=saved.pass||'';
+  }catch{}
+  window.addEventListener('beforeunload',()=>{if(peer)peer.destroy();});
+})();
+</script>
+</body>
+</html>
